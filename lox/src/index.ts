@@ -19,19 +19,35 @@ enum TokenType {
     EOF
 }
 
-class Token {
-    type: TokenType
-    lexeme: string
-    line: number
+let keywords = new Map([
+    ["and", TokenType.AND],
+    ["class", TokenType.CLASS],
+    ["else", TokenType.ELSE],
+    ["false", TokenType.FALSE],
+    ["for", TokenType.FOR],
+    ["fun", TokenType.FUN],
+    ["if", TokenType.IF],
+    ["nil", TokenType.NIL],
+    ["or", TokenType.OR],
+    ["print", TokenType.PRINT],
+    ["return", TokenType.RETURN],
+    ["super", TokenType.SUPER],
+    ["this", TokenType.THIS],
+    ["true", TokenType.TRUE],
+    ["var", TokenType.VAR],
+    ["while", TokenType.WHILE],
+])
 
-    constructor(type: TokenType, lexeme: string, line: number) {
-        this.type = type
-        this.lexeme = lexeme
-        this.line = line
+class Token {
+    constructor(readonly type: TokenType,
+                readonly lexeme: string,
+                readonly literal: number | string | null,
+                readonly line: number) {
     }
 
+
     toString() {
-        return `${TokenType[this.type]} ${this.lexeme}`
+        return `${TokenType[this.type]} ${this.lexeme} at line ${this.line}`
     }
 }
 
@@ -78,57 +94,73 @@ class Scanner {
         const c = this.advance()
         switch (c) {
             case ' ':
+            case '\r':
+            case '\t':
                 // Do nothing
                 break
+            case '\n':
+                this.line++
+                break
             case '(':
-                this.addToken(TokenType.LEFT_PAREN);
+                this.addTokenN(TokenType.LEFT_PAREN);
                 break;
             case ')':
-                this.addToken(TokenType.RIGHT_PAREN);
+                this.addTokenN(TokenType.RIGHT_PAREN);
                 break;
             case '{':
-                this.addToken(TokenType.LEFT_BRACE);
+                this.addTokenN(TokenType.LEFT_BRACE);
                 break;
             case '}':
-                this.addToken(TokenType.RIGHT_BRACE);
+                this.addTokenN(TokenType.RIGHT_BRACE);
                 break;
             case ',':
-                this.addToken(TokenType.COMMA);
+                this.addTokenN(TokenType.COMMA);
                 break;
             case '.':
-                this.addToken(TokenType.DOT);
+                this.addTokenN(TokenType.DOT);
                 break;
             case '-':
-                this.addToken(TokenType.MINUS);
+                this.addTokenN(TokenType.MINUS);
                 break;
             case '+':
-                this.addToken(TokenType.PLUS);
+                this.addTokenN(TokenType.PLUS);
                 break;
             case ';':
-                this.addToken(TokenType.SEMICOLON);
+                this.addTokenN(TokenType.SEMICOLON);
                 break;
             case '*':
-                this.addToken(TokenType.STAR);
+                this.addTokenN(TokenType.STAR);
                 break;
 
             case '!':
-                this.addToken(this.match('=') ? TokenType.BANG_EQUAL : TokenType.BANG);
+                this.addTokenN(this.match('=') ? TokenType.BANG_EQUAL : TokenType.BANG);
                 break;
             case '=':
-                this.addToken(this.match('=') ? TokenType.EQUAL_EQUAL : TokenType.EQUAL);
+                this.addTokenN(this.match('=') ? TokenType.EQUAL_EQUAL : TokenType.EQUAL);
                 break;
             case '<':
-                this.addToken(this.match('=') ? TokenType.LESS_EQUAL : TokenType.LESS);
+                this.addTokenN(this.match('=') ? TokenType.LESS_EQUAL : TokenType.LESS);
                 break;
             case '>':
-                this.addToken(this.match('=') ? TokenType.GREATER_EQUAL : TokenType.EQUAL);
+                this.addTokenN(this.match('=') ? TokenType.GREATER_EQUAL : TokenType.GREATER);
                 break;
+            case '/':
+                if (this.match('/')) {
+                    // Advance until end of line
+                    while (!this.isAtEnd() && this.peek() != '\n') this.advance()
+                } else {
+                    this.addTokenN(TokenType.SLASH);
+                }
+                break;
+            case '"':
+                this.string();
+                break
 
             default:
                 if (isDigit(c)) {
                     this.number();
-                    // } else if (isAlpha(c)) {
-                    //     this.identifier();
+                } else if (isAlpha(c)) {
+                    this.identifier();
                 } else {
                     error(this.line, `Unexpected character "${c}"`);
                 }
@@ -136,11 +168,14 @@ class Scanner {
         }
     }
 
-    private addToken(type: TokenType) {
+    private addTokenN(type: TokenType) {
+        this.addToken(type, null)
+    }
 
+    private addToken(type: TokenType, literal: number | string | null) {
         const text = this.source.substring(this.start, this.current)
         // console.log("add", TokenType[type], `"${text}"`, this.start, this.current, this.line)
-        this.tokens.push(new Token(type, text, this.line))
+        this.tokens.push(new Token(type, text, literal, this.line))
     }
 
     isAtEnd() {
@@ -153,7 +188,7 @@ class Scanner {
             this.scanToken()
         }
 
-        this.tokens.push(new Token(TokenType.EOF, "", -1))
+        this.tokens.push(new Token(TokenType.EOF, "", null, this.line))
         return this.tokens
     }
 
@@ -161,7 +196,7 @@ class Scanner {
         while (isDigit(this.peek()))
             this.advance()
 
-        console.log(this.peek(), this.peekNext())
+        // console.log(this.peek(), this.peekNext())
         if (this.peek() == '.' && isDigit(this.peekNext())) {
             this.advance()
 
@@ -169,7 +204,19 @@ class Scanner {
                 this.advance()
         }
 
-        this.addToken(TokenType.NUMBER)
+        let text = this.source.substring(this.start, this.current)
+        this.addToken(TokenType.NUMBER, parseFloat(text))
+    }
+
+    private identifier() {
+        while (isAlphaNumeric(this.peek())) this.advance();
+
+        let text = this.source.substring(this.start, this.current)
+        let type = keywords.get(text)
+        if (type == null)
+            type = TokenType.IDENTIFIER
+
+        this.addTokenN(type);
     }
 
     private peek() {
@@ -183,6 +230,20 @@ class Scanner {
 
         return this.source.charAt(this.current + 1);
     }
+
+    private string() {
+        while (this.peek() != '"' && !this.isAtEnd()) {
+            if (this.peek() == '\n') this.line++
+            this.advance()
+        }
+        if (this.isAtEnd()) {
+            error(this.line, "Unterminated string")
+            return
+        }
+        this.advance()
+        let value = this.source.substring(this.start + 1, this.current - 1)
+        this.addToken(TokenType.STRING, value)
+    }
 }
 
 function error(line: number, message: string) {
@@ -190,7 +251,7 @@ function error(line: number, message: string) {
 }
 
 function report(line: number, where: string, message: string) {
-    process.stderr.write(`[line ${line}] Error ${where}: message`)
+    process.stderr.write(`[line ${line}] Error ${where}: ${message}`)
 }
 
 function run(source: string) {
@@ -202,4 +263,9 @@ function run(source: string) {
     }
 }
 
-run("(1234.4 != 15.2)")
+run(`(1234.4 != 15.2)
+// Comment
+/ divided
+or (1 == 2)
+"magnus
+`)
