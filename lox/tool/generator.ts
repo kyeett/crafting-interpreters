@@ -1,10 +1,8 @@
 import {Project} from "ts-morph";
 
-const outputDir = "src"
-
-function defineAst(outputDir: string, baseName: string, types: string[]) {
+export function defineAst(filePath: string, baseName: string, types: string[]) {
     const project = new Project({});
-    let myClassFile = project.createSourceFile(outputDir + "/expr.generated.ts", "", {overwrite: true})
+    let myClassFile = project.createSourceFile(filePath, "", {overwrite: true})
 
     myClassFile.addClass({name: baseName, isAbstract: true})
 
@@ -26,10 +24,3 @@ function defineAst(outputDir: string, baseName: string, types: string[]) {
     }
     project.saveSync()
 }
-
-defineAst(outputDir, "Expr", [
-    "Binary   : Expr left, Token operator, Expr right",
-    "Grouping : Expr expression",
-    "Literal  : Object value",
-    "Unary    : Token operator, Expr right"
-])
